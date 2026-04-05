@@ -51,6 +51,22 @@ class SignLangDataSet(Dataset):
         video_id, class_idx = self.sample[idx]
         features = self.features_dir / f'{video_id}.npy'
         features = torch.tensor(np.load(features), dtype=torch.float32)
+        
+        if self.split == 'train':
+            # Horizontal flip augmentation: mirror left/right hands and flip x-coordinates
+            # Features layout: [left_hand (63 dims), right_hand (63 dims), body (2048 dims)]
+            # x-coordinates are at indices 0::3, so invert them (1 - x) for mirroring
+            if torch.rand(1) > 0.5:
+                features = features.clone()
+                features[:, 0::3] = 1 - features[:, 0::3]  # Invert x-coordinates
+                left  = features[:, 0:63].clone()
+                right = features[:, 63:126].clone()
+                features[:, 0:63]   = right  # Swap left and right hands
+                features[:, 63:126] = left
+
+            # Temporal reverse augmentation: play video backwards by reversing frame sequence
+            if torch.rand(1) > 0.5:
+                features = features.flip(dims=[0])
     
         return (features, self.class_map[class_idx])
     
