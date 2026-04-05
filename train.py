@@ -12,10 +12,10 @@ from pathlib import Path
 from save_params import save_params, load_params
 
 # ==================== Paths ====================
-PARENT = Path(r'G:\Projects\Python\SignLanguage\Dataset')
-NSLT_PATH    = PARENT / Path('nslt_300.json')      # JSON file with dataset split information
-KEYPOINTS_DIR = PARENT / Path('keypoints')            # Directory containing pre-computed video features
-MODEL_PATH = Path('models')
+PARENT = Path(r'G:\Projects\Python\SignLanguage')
+NSLT_PATH    = PARENT / Path('Dataset/nslt_300.json')      # JSON file with dataset split information
+KEYPOINTS_DIR = PARENT / Path('Dataset/keypoints')            # Directory containing pre-computed video features
+MODEL_PATH = PARENT / Path('models')
 MODEL_NAME = "SignLang_model.pth"
 MODEL_SAVE_PATH = MODEL_PATH / MODEL_NAME
 
