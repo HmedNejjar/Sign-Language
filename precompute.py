@@ -13,8 +13,8 @@ PARENT = Path(r'G:\Projects\Python\SignLanguage')
 VIDEO_DIR    = PARENT / Path('Dataset/videos')
 KEYPOINTS_DIR = PARENT / Path('Dataset/keypoints')
 NSLT_FILE    = PARENT / Path('Dataset/nslt_300.json')
-HAND_MODEL   = PARENT / Path('landmarkers/hand_landmarker.task')
-POSE_MODEL   = PARENT / Path('landmarkers/pose_landmarker_lite.task')
+HAND_MODEL   = PARENT / Path('Dataset/landmarkers/hand_landmarker.task')
+POSE_MODEL   = PARENT / Path('Dataset/landmarkers/pose_landmarker_lite.task')
 
 KEYPOINTS_DIR.mkdir(parents=True, exist_ok=True)
 
