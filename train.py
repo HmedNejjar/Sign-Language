@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -21,7 +20,8 @@ MODEL_NAME = "SignLang_model.pth"
 MODEL_SAVE_PATH = MODEL_PATH / MODEL_NAME
 
 # ==================== Hyperparameters ====================
-BATCH_SIZE = 16        # Number of samples per batch
+BIDIRECTIONAL = True   # Enable bidirectional GRU
+BATCH_SIZE = 10        # Number of samples per batch
 PATIENCE = 30          # Number of epochs to wait for improvement before early stopping
 INPUT_SIZE = 225       # Feature dimension from pre-computed video features
 HIDDEN_SIZE = 64       # GRU hidden state dimension
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     
     # ==================== Initialize Model ====================
     # Create SignGRU model with specified architecture
-    model = SignGRU(input_size=INPUT_SIZE, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, num_classes=NUM_CLASSES, dropout=DROPOUT)
+    model = SignGRU(input_size=INPUT_SIZE, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, num_classes=NUM_CLASSES, dropout=DROPOUT, bidirectional= BIDIRECTIONAL)
     model = model.to(device)  # Move model to device
     
     # ==================== Setup Training ====================

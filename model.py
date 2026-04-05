@@ -10,7 +10,7 @@ class SignGRU(nn.Module):
     classifier to map to sign language classes.
     """
     
-    def __init__(self, input_size: int = 225, hidden_size: int = 64, num_layers: int = 2, num_classes: int = 300, dropout: float = 0.3) -> None:
+    def __init__(self, input_size: int = 225, hidden_size: int = 64, num_layers: int = 2, num_classes: int = 300, dropout: float = 0.3, bidirectional:bool = True) -> None:
         """Initialize the SignGRU model.
         
         Args:
@@ -24,7 +24,7 @@ class SignGRU(nn.Module):
         
         # GRU layers for processing sequential frame features
         # batch_first=True means input/output tensors are (batch, seq, feature)
-        self.GRU = nn.GRU(input_size, hidden_size, num_layers, dropout=dropout, batch_first=True, bidirectional=True)
+        self.GRU = nn.GRU(input_size, hidden_size, num_layers, dropout=dropout, batch_first=True, bidirectional=bidirectional)
         
         # Since GRU is bidirectional, the output hidden dimension is doubled
         effective_hidden = hidden_size * 2

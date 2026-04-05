@@ -1,64 +1,33 @@
-#type: ignore
+# type: ignore
 import cv2
 import torch
 import numpy as np
 import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 from collections import deque
 from pathlib import Path
-
 from model import SignGRU
-from plot_metrics import MetricsLogger   # for post-training curve display
+
+from train import HIDDEN_SIZE
 
 # ==================== Config ====================
-PARENT = Path(r'G:\Projects\Python\SignLanguage\Dataset')
-CLASS_PATH = PARENT / Path('wlasl_class_list.txt')
-MODEL_PATH   = Path('models/SignLang_model.pth')
-N_FRAMES     = 32       # frames to buffer before predicting
-INPUT_SIZE   = 225      # 21*3 (hand) + 33*3 (pose) + 21*3 (other hand) = 225
-HIDDEN_SIZE  = 64
-NUM_LAYERS   = 2
-NUM_CLASSES  = 300
-DEVICE       = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+PARENT      = Path(r'G:\Projects\Python\SignLanguage\Dataset')
+CLASS_PATH  = PARENT / 'wlasl_class_list.txt'
+MODEL_PATH  = Path('models/SignLang_model.pth')
+HAND_MODEL  = Path('hand_landmarker.task')
+POSE_MODEL  = Path('pose_landmarker_lite.task')
 
-# ==================== MediaPipe Setup ====================
-mp_holistic = mp.solutions.holistic
-mp_drawing  = mp.solutions.drawing_utils
-
-def extract_keypoints(results) -> np.ndarray:
-    """
-    Extracts landmarks and flattens them into a single 1D array.
-    Matches the 225 input size: pose(99) + left_hand(63) + right_hand(63).
-    """
-    pose = (
-        np.array([[res.x, res.y, res.z] for res in results.pose_landmarks.landmark]).flatten()
-        if results.pose_landmarks else np.zeros(33 * 3)
-    )
-    lh = (
-        np.array([[res.x, res.y, res.z] for res in results.left_hand_landmarks.landmark]).flatten()
-        if results.left_hand_landmarks else np.zeros(21 * 3)
-    )
-    rh = (
-        np.array([[res.x, res.y, res.z] for res in results.right_hand_landmarks.landmark]).flatten()
-        if results.right_hand_landmarks else np.zeros(21 * 3)
-    )
-    return np.concatenate([pose, lh, rh])   # (225,)
+N_FRAMES    = 32
+INPUT_SIZE  = 225
+NUM_LAYERS  = 2
+NUM_CLASSES = 300
+DEVICE      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 # ==================== Load Class List ====================
 def load_classes(path: str | Path, num_classes: int) -> list[str]:
-    """Load sign class names from the tab-separated class list file.
-    Args:
-        path:        Path to wlasl_class_list.txt
-        num_classes: How many classes to load (matches NUM_CLASSES used at training time).
-
-    Returns:
-        List of class-name strings, indexed 0 … num_classes-1.
-
-    Note:
-        We sort by the integer index in column 0 rather than relying on file order,
-        which makes the mapping robust to re-ordered files.
-    """
-    entries: list[tuple[int, str]] = []
+    entries = []
     with open(path, 'r') as f:
         for line in f:
             line = line.strip()
@@ -69,19 +38,11 @@ def load_classes(path: str | Path, num_classes: int) -> list[str]:
                 continue
             idx, word = int(parts[0]), parts[1].strip()
             entries.append((idx, word))
-
-    # Sort by index so position 0 → class 0, position 1 → class 1, etc.
     entries.sort(key=lambda x: x[0])
-
-    # Keep only the first num_classes entries (indices 0 … num_classes-1)
     classes = [word for _, word in entries[:num_classes]]
-
     if len(classes) < num_classes:
-        raise ValueError(
-            f"Requested {num_classes} classes but only {len(classes)} found in {path}"
-        )
+        raise ValueError(f"Requested {num_classes} classes but only {len(classes)} found")
     return classes
-
 
 CLASSES = load_classes(CLASS_PATH, NUM_CLASSES)
 
@@ -89,23 +50,62 @@ CLASSES = load_classes(CLASS_PATH, NUM_CLASSES)
 # ==================== Load Model ====================
 model = SignGRU(INPUT_SIZE, HIDDEN_SIZE, NUM_LAYERS, NUM_CLASSES).to(DEVICE)
 if MODEL_PATH.exists():
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True))
+    print("model loaded.")
+else:
+    print("WARNING: no model found, running with random weights.")
 model.eval()
 
 
-# ==================== Optional: Plot Training Curves ====================
-def show_training_curves(metrics_path: str | Path = 'metrics\\metrics.json') -> None:
-    """Display saved training curves (loss + accuracy) if metrics.json exists.
+# ==================== MediaPipe Setup ====================
+hand_options = vision.HandLandmarkerOptions(
+    base_options=python.BaseOptions(model_asset_path=str(HAND_MODEL)),
+    running_mode=vision.RunningMode.IMAGE,
+    num_hands=2,
+)
+pose_options = vision.PoseLandmarkerOptions(
+    base_options=python.BaseOptions(model_asset_path=str(POSE_MODEL)),
+    running_mode=vision.RunningMode.IMAGE,
+)
 
-    Call this before or after the webcam loop, e.g.:
-        show_training_curves()
-    """
-    metrics_path = Path(metrics_path)
-    if not metrics_path.exists():
-        print(f"[plot] No metrics file found at {metrics_path} — skipping plot.")
-        return
-    logger = MetricsLogger.load(metrics_path)
-    logger.plot(save_path='training_curves.png', show=True)
+
+def extract_keypoints(frame_rgb: np.ndarray,
+                      hand_detector,
+                      pose_detector) -> np.ndarray:
+    """Extract keypoints matching precompute.py order: [left_hand, right_hand, pose]"""
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+
+    # --- Hands ---
+    hand_result = hand_detector.detect(mp_image)
+    left_hand   = np.zeros(63)
+    right_hand  = np.zeros(63)
+
+    for i, handedness in enumerate(hand_result.handedness):
+        label     = handedness[0].category_name  # 'Left' or 'Right'
+        landmarks = hand_result.hand_landmarks[i]
+        coords    = np.array([[lm.x, lm.y, lm.z] for lm in landmarks]).flatten()
+        if label == 'Left':
+            left_hand = coords
+        else:
+            right_hand = coords
+
+    # --- Pose ---
+    pose_result = pose_detector.detect(mp_image)
+    pose = np.zeros(99)
+    if pose_result.pose_landmarks:
+        landmarks = pose_result.pose_landmarks[0]
+        pose = np.array([[lm.x, lm.y, lm.z] for lm in landmarks]).flatten()
+
+    # order must match precompute.py: [left_hand, right_hand, pose]
+    return np.concatenate([left_hand, right_hand, pose])  # (225,)
+
+
+def normalize_frame(frame_features: np.ndarray) -> np.ndarray:
+    """Per-frame z-score normalization — must match precompute.py."""
+    mean = frame_features.mean()
+    std  = frame_features.std()
+    std  = std if std > 1e-8 else 1e-8
+    return (frame_features - mean) / std
 
 
 # ==================== Inference Loop ====================
@@ -114,45 +114,43 @@ frame_buffer = deque(maxlen=N_FRAMES)
 current_pred = "..."
 current_conf = 0.0
 
-with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+with vision.HandLandmarker.create_from_options(hand_options) as hand_detector, \
+     vision.PoseLandmarker.create_from_options(pose_options) as pose_detector:
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
 
-        frame = cv2.resize(frame, (360, 640))
-        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image.flags.writeable = False
-        results = holistic.process(image)
-        image.flags.writeable = True
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame_rgb = cv2.resize(frame_rgb, (640, 480))
 
-        keypoints = extract_keypoints(results)
+        # extract + normalize — must match precompute pipeline
+        keypoints = extract_keypoints(frame_rgb, hand_detector, pose_detector)
+        keypoints = normalize_frame(keypoints)
         frame_buffer.append(keypoints)
 
         if len(frame_buffer) == N_FRAMES:
-            session_input = np.expand_dims(list(frame_buffer), axis=0)   # (1, 32, 225)
-            x = torch.tensor(session_input, dtype=torch.float32).to(DEVICE)
+            x = torch.tensor(
+                np.expand_dims(list(frame_buffer), axis=0),
+                dtype=torch.float32
+            ).to(DEVICE)  # (1, 32, 225)
 
             with torch.no_grad():
                 logits = model(x)
                 probs  = torch.softmax(logits, dim=1)
                 conf, pred_idx = torch.max(probs, dim=1)
-
                 current_pred = CLASSES[pred_idx.item()]
                 current_conf = conf.item()
 
         # HUD overlay
-        cv2.rectangle(image, (0, 0), (300, 40), (245, 117, 16), -1)
-        cv2.putText(image, f'{current_pred} ({current_conf:.2%})', (15, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+        display = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        cv2.rectangle(display, (0, 0), (350, 40), (245, 117, 16), -1)
+        cv2.putText(display, f'{current_pred} ({current_conf:.2%})', (10, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2, cv2.LINE_AA)
 
-        mp_drawing.draw_landmarks(image, results.pose_landmarks,       mp_holistic.POSE_CONNECTIONS)
-        mp_drawing.draw_landmarks(image, results.left_hand_landmarks,  mp_holistic.HAND_CONNECTIONS)
-        mp_drawing.draw_landmarks(image, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
-
-        cv2.imshow('Sign Language GRU', image)
-        if cv2.waitKey(10) & 0xFF == ord('q'):
+        cv2.imshow('Sign Language', display)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
 cap.release()
