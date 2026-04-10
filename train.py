@@ -9,7 +9,7 @@ from plot_metrics import MetricsLogger
 from dataset import SignLangDataSet
 from model import SignGRU
 from pathlib import Path
-from save_params import save_params, load_params
+from save_params import save_params, load_params, freeze
 
 # ==================== Paths ====================
 PARENT = Path(r'G:\Projects\Python\SignLanguage')
@@ -166,9 +166,11 @@ if __name__ == "__main__":
     else:
         print("No pre-trained model found. Starting training from scratch.")
     
+    #Set trainable parameters
+    trainable = filter(lambda p: p.requires_grad, model.parameters())
     # Loss function and optimizer
     CELoss = nn.CrossEntropyLoss()
-    optimizer = Adam(model.parameters(), lr=LR, weight_decay=1e-4)
+    optimizer = Adam(trainable, lr=LR, weight_decay=1e-4)
     # Learning rate scheduler: reduce LR when validation accuracy plateaus
     scheduler = ReduceLROnPlateau(optimizer, mode='max', patience=10, factor=FACTOR)
     
@@ -193,7 +195,7 @@ if __name__ == "__main__":
         if val_top1 > best_val_top1:
             best_val_top1 = val_top1
             epochs_no_imp = 0  # Reset counter
-            save_params(model)
+            save_params(model, MODEL_SAVE_PATH)
             print(f"  --> saved best model (val top1: {best_val_top1:.3f})")
             
         else:
@@ -209,4 +211,5 @@ if __name__ == "__main__":
     # ==================== Training Complete ====================
     print(f"\ntraining done. best val top1: {best_val_top1:.3f}")
     print(f"model saved to {MODEL_SAVE_PATH}")
+    
     logger.save(); logger.plot()
