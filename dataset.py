@@ -31,7 +31,11 @@ class SignLangDataSet(Dataset):
         self.class_map = {global_idx: local_idx for local_idx, global_idx in enumerate(all_classes)}
 
         # Build list of (video_id, class_label) pairs for the specified split
-        self.sample = [(video_id, meta['action'][0]) for video_id, meta in nslt.items() if meta['subset'] == split]
+        if split == 'train':
+            subsets = ['train', 'val']
+        else:
+            subsets = [split]
+        self.sample = [(video_id, meta['action'][0]) for video_id, meta in nslt.items() if meta['subset'] in subsets]
         
     def __len__(self):
         """Return the total number of samples in this split."""
@@ -77,15 +81,13 @@ if __name__ == '__main__':
 
     # Create dataset splits
     train_set = SignLangDataSet(NSLT_PATH, FEATURES_DIR, split='train')
-    val_set   = SignLangDataSet(NSLT_PATH, FEATURES_DIR, split='val')
     test_set  = SignLangDataSet(NSLT_PATH, FEATURES_DIR, split='test')
 
     # Print dataset sizes
-    print(f"train: {len(train_set)}  val: {len(val_set)}  test: {len(test_set)}")
+    print(f"train: {len(train_set)}  test: {len(test_set)}")
 
     # Create data loaders
     train_loader = DataLoader(train_set, batch_size=8, shuffle=True)
-    val_loader   = DataLoader(val_set,   batch_size=8, shuffle=False)
     test_loader  = DataLoader(test_set,  batch_size=8, shuffle=False)
 
     # Sanity check: verify batch shapes and data types

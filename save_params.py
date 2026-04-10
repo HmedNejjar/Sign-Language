@@ -6,6 +6,9 @@ def save_params(model: SignGRU):
     MODEL_PATH = Path('models')
     MODEL_PATH.mkdir(parents=True, exist_ok=True)
     
+    for params in model.GRU.parameters():
+        params.requires_grad = False
+    
     MODEL_NAME = "SignLang_model.pth"   
     MODEL_SAVE_PATH = MODEL_PATH / MODEL_NAME
 

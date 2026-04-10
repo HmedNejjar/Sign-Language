@@ -139,7 +139,7 @@ if __name__ == "__main__":
     # Create datasets for training and validation splits
     train_set = SignLangDataSet(NSLT_PATH, KEYPOINTS_DIR, split='train')
     print(f'Train Length: {len(train_set)}')
-    val_set = SignLangDataSet(NSLT_PATH, KEYPOINTS_DIR, split='val')
+    val_set = SignLangDataSet(NSLT_PATH, KEYPOINTS_DIR, split='test')
     print(f'Val Length: {len(val_set)}')
     
     # Create data loaders with batching
@@ -158,6 +158,10 @@ if __name__ == "__main__":
         print(f"Loading pre-trained model from {MODEL_SAVE_PATH}...")
         model_state = load_params(MODEL_SAVE_PATH)
         model.load_state_dict(model_state)
+        
+        for params in model.GRU.parameters():
+            params.requires_grad = True
+            
         print("Model loaded successfully!")
     else:
         print("No pre-trained model found. Starting training from scratch.")
